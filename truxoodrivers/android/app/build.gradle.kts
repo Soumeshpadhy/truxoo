@@ -1,5 +1,8 @@
 plugins {
     id("com.android.application")
+    // START: FlutterFire Configuration
+    id("com.google.gms.google-services")
+    // END: FlutterFire Configuration
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -21,7 +24,7 @@ android {
 
     defaultConfig {
         applicationId = "com.truxoo.truxoo"
-        minSdk = 21  
+        minSdk = 23  
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -47,4 +50,9 @@ dependencies {
     
     // Add multidex support
     implementation("androidx.multidex:multidex:2.0.1")
+    implementation(platform("com.google.firebase:firebase-bom:34.6.0"))
+
+    // Add the dependency for the Firebase Authentication library
+    // When using the BoM, you don't specify versions in Firebase library dependencies
+    implementation("com.google.firebase:firebase-auth")
 }

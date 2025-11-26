@@ -1,113 +1,178 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const multer = require('multer');
-const { MongoClient, ObjectId } = require('mongodb');
+import express from "express";
+import cors from "cors";
+import multer from "multer";
+import dotenv from "dotenv";
+// NOTE: For advanced server-side operations (like setting serverTimestamp),
+// it's generally recommended to use the Firebase Admin SDK. 
+// Since you are using @google-cloud/firestore, we will stick to your current setup.
+import { Firestore } from "@google-cloud/firestore";
+import { Storage } from "@google-cloud/storage";
+import path from "path";
+
+dotenv.config();
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json()); // Add this line to parse JSON bodies for the new endpoints
 
-// Multer config to store uploaded files in memory as buffers
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB per file
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
+// --- Firestore ---
+const firestore = new Firestore({
+  projectId: "truxoo-25f15",
+  databaseId: "truxoodrivers", 
+  keyFilename: "serviceAccountKey.json",
 });
 
-// MongoDB connection settings
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://truxoo:truxoo@final.g5ydq2b.mongodb.net/?retryWrites=true&w=majority&appName=final';
-const DB_NAME = 'truxoo';
+// --- Firebase Storage ---
+const gcsStorage = new Storage({
+  projectId: "truxoo-25f15",
+  keyFilename: "serviceAccountKey.json",
+});
 
-let db;
+const bucketName = "truxoo-25f15.firebasestorage.app"; // **Reverting to .appspot.com for reliability**
+const bucket = gcsStorage.bucket(bucketName);
 
-// Connect to MongoDB
-MongoClient.connect(MONGO_URI)
-  .then((client) => {
-    db = client.db(DB_NAME);
-    console.log('✅ Connected to MongoDB');
-  })
-  .catch((err) => {
-    console.error('❌ MongoDB Connection Error:', err);
-    process.exit(1);
-  });
+// Upload Helper (Unchanged)
+async function uploadFile(fileArray, mobileNumber, fileKey) {
+  if (!fileArray || fileArray.length === 0) return null;
 
-// Driver Registration Endpoint
+  const uploadedFile = fileArray[0];
+  const destination = `driver_uploads/${mobileNumber}/${fileKey}_${Date.now()}${path.extname(uploadedFile.originalname)}`;
+
+  const fileUpload = bucket.file(destination);
+
+  const stream = fileUpload.createWriteStream({
+    metadata: { contentType: uploadedFile.mimetype },
+    resumable: false,
+  });
+
+  return new Promise((resolve, reject) => {
+    stream.on("error", reject);
+    stream.on("finish", async () => {
+      // NOTE: makePublic() requires the 'Storage Object Admin' role on the service account.
+      await fileUpload.makePublic(); 
+      resolve(fileUpload.publicUrl());
+    });
+
+    stream.end(uploadedFile.buffer);
+  });
+}
+
+// ----------------------------------------------------
+// ➡️ 1. UPDATED REGISTRATION ENDPOINT (/register)
+// ----------------------------------------------------
+
 app.post(
-  '/api/driver/register',
-  upload.fields([
-    { name: 'truck_photo', maxCount: 1 },
-    { name: 'pan_aadhar_photo', maxCount: 1 },
-    { name: 'license_photo', maxCount: 1 },
-    { name: 'driver_photo', maxCount: 1 }
-  ]),
-  async (req, res) => {
-    try {
-      const formData = req.body;
-      const files = req.files || {};
-      const fileEntries = {};
+  "/register",
+  upload.fields([
+    { name: "truck_photo", maxCount: 1 },
+    { name: "pan_aadhar_photo", maxCount: 1 },
+    { name: "license_photo", maxCount: 1 },
+    { name: "driver_photo", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const { body, files } = req;
+      const mobileNumber = body.mobile;
 
-      // Package files for MongoDB storage
-      for (const key in files) {
-        const file = files[key][0];
-        fileEntries[key] = {
-          originalname: file.originalname,
-          mimetype: file.mimetype,
-          buffer: file.buffer
-        };
+      if (!mobileNumber) {
+        return res.status(400).json({ error: "Mobile number is required." });
+      }
+
+      // Check if driver already exists
+      const driverRef = firestore.collection("drivers").doc(mobileNumber);
+      const doc = await driverRef.get();
+
+      if (doc.exists && doc.data().is_verified === true) {
+          // If already verified, prevent re-registration and guide to login
+          return res.status(409).json({ 
+              message: "Driver already fully registered and verified. Please log in.",
+              action: "login" 
+          });
       }
+      
+      // Upload files (even if existing, files may have been updated)
+      const [truckPhotoUrl, panAadharUrl, licenseUrl, driverPhotoUrl] =
+        await Promise.all([
+          uploadFile(files.truck_photo, mobileNumber, "truck"),
+          uploadFile(files.pan_aadhar_photo, mobileNumber, "panAadhar"),
+          uploadFile(files.license_photo, mobileNumber, "license"),
+          uploadFile(files.driver_photo, mobileNumber, "driver"),
+        ]);
+      
+      const driverData = {
+        ...body,
+        truck_photo_url: truckPhotoUrl,
+        pan_aadhar_photo_url: panAadharUrl,
+        license_photo_url: licenseUrl,
+        driver_photo_url: driverPhotoUrl,
+        
+        // ⬇️ KEY CHANGE: Set is_verified to false for OTP step
+        is_verified: false, 
+        // ⬆️
+        
+        createdAt: new Date(),
+      };
 
-      const driverDoc = {
-        ...formData,
-        files: fileEntries,
-        registeredAt: new Date()
-      };
+      await driverRef.set(driverData, { merge: true }); // Use merge if re-registering
 
-      const result = await db.collection('drivers').insertOne(driverDoc);
-
-      res.status(201).json({
-        message: 'Driver registered successfully',
-        driverId: result.insertedId
-      });
-    } catch (err) {
-      console.error('❌ Error registering driver:', err);
-      res.status(500).json({ error: 'Failed to register driver' });
-    }
-  }
+      // Respond with a message guiding to the OTP page
+      res.status(202).json({ 
+            message: "Registration data saved. Proceed to OTP verification.", 
+            mobile: mobileNumber,
+            action: "verify_otp"
+        });
+        
+    } catch (error) {
+      console.error("Error registering driver:", error);
+      res.status(500).json({ error: "Failed to register driver" });
+    }
+  }
 );
 
-// Retrieve Driver Info (with metadata)
-app.get('/api/driver/:id', async (req, res) => {
+// ----------------------------------------------------
+// ➡️ 2. NEW ENDPOINT: VERIFICATION STATUS UPDATE
+// ----------------------------------------------------
+
+app.post("/verify-driver", async (req, res) => {
   try {
-    const driver = await db.collection('drivers').findOne({ _id: new ObjectId(req.params.id) });
-    if (!driver) {
-      return res.status(404).json({ error: 'Driver not found' });
+    const { mobile } = req.body; // Flutter sends the mobile number
+
+    if (!mobile) {
+      return res.status(400).json({ error: "Mobile number is required for verification." });
     }
-    res.json(driver);
-  } catch (err) {
-    console.error('❌ Error fetching driver:', err);
-    res.status(500).json({ error: 'Failed to fetch driver' });
+
+    const driverRef = firestore.collection("drivers").doc(mobile);
+    const doc = await driverRef.get();
+
+    if (!doc.exists) {
+        // Should not happen if registration was successful
+        return res.status(404).json({ error: "Driver record not found." });
+    }
+
+    // Update the is_verified field
+    await driverRef.update({
+      is_verified: true,
+      verification_date: new Date(),
+    });
+
+    console.log(`Driver verification status updated for: ${mobile}`);
+
+    res.status(200).json({
+      message: "Driver verified and status updated in Firestore.",
+      mobile: mobile,
+    });
+
+  } catch (error) {
+    console.error("Error updating verification status:", error);
+    res.status(500).json({ error: "Failed to update driver status." });
   }
 });
 
-// Serve specific driver file (e.g., license photo)
-app.get('/api/driver/:id/file/:fileKey', async (req, res) => {
-  try {
-    const driver = await db.collection('drivers').findOne({ _id: new ObjectId(req.params.id) });
-    if (!driver || !driver.files || !driver.files[req.params.fileKey]) {
-      return res.status(404).json({ error: 'File not found' });
-    }
 
-    const file = driver.files[req.params.fileKey];
-    res.set('Content-Type', file.mimetype);
-    res.send(file.buffer);
-  } catch (err) {
-    console.error('❌ Error fetching file:', err);
-    res.status(500).json({ error: 'Failed to fetch file' });
-  }
-});
-
-// Start Express server on port 3000 listening on all network interfaces
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
-});
+app.listen(PORT, "0.0.0.0", () =>
+  console.log(`🚀 Server running on http://0.0.0.0:${PORT}`)
+);

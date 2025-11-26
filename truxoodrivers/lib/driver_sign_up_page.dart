@@ -3,11 +3,10 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'otp_page.dart';
+import 'otp_page.dart'; // Ensure this path is correct
 
 class DriverRegistrationPage extends StatefulWidget {
-  const DriverRegistrationPage({Key? key}) : super(key: key);
-
+  const DriverRegistrationPage({super.key});
   @override
   State<DriverRegistrationPage> createState() => _DriverRegistrationPageState();
 }
@@ -16,6 +15,7 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
   final _formKey = GlobalKey<FormState>();
   final ImagePicker _picker = ImagePicker();
 
+  // --- Text Controllers ---
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _mobileController = TextEditingController();
   final TextEditingController _stateController = TextEditingController();
@@ -31,6 +31,7 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
   final TextEditingController _companyNameController = TextEditingController();
   final TextEditingController _operationRulesController = TextEditingController();
 
+  // --- File Holders ---
   File? _truckPhoto;
   File? _panAadharPhoto;
   File? _licensePhoto;
@@ -58,6 +59,7 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
     super.dispose();
   }
 
+  // --- Image Picking Logic (Unchanged) ---
   Future<void> _pickImage(String imageType) async {
     try {
       showDialog(
@@ -104,10 +106,12 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
         });
       }
     } catch (e) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
-      );
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking image: $e')),
+        );
+      }
     }
   }
 
@@ -213,30 +217,38 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
     );
   }
 
+  // --- UPDATED Submission Logic to handle the API response correctly ---
   Future<void> submitRegistrationForm() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
-    final url = Uri.parse("http://localhost:3000/api/driver/register");
+    // ⚠️ Check URL: If using Android Emulator, use "http://10.0.2.2:3000/register"
+    final url = Uri.parse("http://localhost:3000/register"); 
+
+    // 1. Create a map containing all the form data (to be sent via API and to OtpPage)
+    final Map<String, dynamic> dataToSend = {
+      'name': _nameController.text,
+      'mobile': _mobileController.text,
+      'state': _stateController.text,
+      'city': _cityController.text,
+      'dob': _dobController.text,
+      'license_number': _licenseNumberController.text,
+      'expiry_date': _expiryDateController.text,
+      'email': _emailController.text,
+      'truck_type': _truckTypeController.text,
+      'truck_model': _truckModelController.text,
+      'truck_number': _truckNumberController.text,
+      'language': _languageController.text,
+      'transport_type': _transportCompanyType,
+      'company_name': _companyNameController.text,
+      'operation_rules': _operationRulesController.text,
+    };
 
     try {
       final request = http.MultipartRequest('POST', url);
+      request.fields.addAll(dataToSend.map((key, value) => MapEntry(key, value.toString())));
 
-      request.fields['name'] = _nameController.text;
-      request.fields['mobile'] = _mobileController.text;
-      request.fields['state'] = _stateController.text;
-      request.fields['city'] = _cityController.text;
-      request.fields['dob'] = _dobController.text;
-      request.fields['license_number'] = _licenseNumberController.text;
-      request.fields['expiry_date'] = _expiryDateController.text;
-      request.fields['email'] = _emailController.text;
-      request.fields['truck_type'] = _truckTypeController.text;
-      request.fields['truck_model'] = _truckModelController.text;
-      request.fields['truck_number'] = _truckNumberController.text;
-      request.fields['language'] = _languageController.text;
-      request.fields['transport_type'] = _transportCompanyType;
-      request.fields['company_name'] = _companyNameController.text;
-      request.fields['operation_rules'] = _operationRulesController.text;
-
+      // --- Add File Fields (unchanged) ---
       if (_truckPhoto != null) {
         request.files.add(await http.MultipartFile.fromPath(
           'truck_photo',
@@ -265,31 +277,56 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 
+      if (!mounted) return;
       setState(() => _isLoading = false);
+      
+      Map<String, dynamic> responseBody = {};
+      try {
+        responseBody = jsonDecode(response.body);
+      } catch (e) {
+        // Body couldn't be decoded, treat response.body as the message if needed
+      }
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      // Check for success status codes OR the specific 'verify_otp' action in the body
+      if ((response.statusCode >= 200 && response.statusCode < 300) || 
+          (responseBody.containsKey('action') && responseBody['action'] == 'verify_otp')) {
+        
+        // Success or successful action requested
+        final message = responseBody['message'] ?? 'Registration submitted. Proceeding to OTP.';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Registration submitted successfully')),
+          SnackBar(content: Text(message)),
         );
 
         final phoneNumber = _mobileController.text.replaceAll(RegExp(r'[^\d]'), '');
+        
+        // PASSING THE REQUIRED 'driverData' PARAMETER
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => OtpPage(phoneNumber: phoneNumber)),
+          MaterialPageRoute(
+            builder: (_) => OtpPage(
+              phoneNumber: phoneNumber,
+              driverData: dataToSend, // <-- FIX APPLIED
+            ),
+          ),
         );
       } else {
+        // Handle clear API failure (4xx or 5xx or unexpected body)
+        final errorMessage = responseBody['message'] ?? response.body;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: ${response.body}')),
+          SnackBar(content: Text('Failed: $errorMessage')),
         );
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error submitting form: $e')),
+        SnackBar(content: Text('Network Error: Could not connect to the server.')),
       );
+      print('HTTP Error: $e'); // Log error for debugging
     }
   }
 
+  // --- Widget Build Tree (Unchanged) ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -469,7 +506,7 @@ class _DriverRegistrationPageState extends State<DriverRegistrationPage> {
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: () async {
+                        onPressed: _isLoading ? null : () async {
                           if (_formKey.currentState!.validate()) {
                             if (_panAadharPhoto == null || _licensePhoto == null || _driverPhoto == null) {
                               ScaffoldMessenger.of(context).showSnackBar(

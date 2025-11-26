@@ -307,7 +307,7 @@ class _DriverSideHomeState extends State<DriverSideHome> {
   bool _isOnline = false;
   bool _isBothWays = false; 
   bool _isLoadingLocation = true;
-  bool _isLoadingBookings = false;
+  final bool _isLoadingBookings = false;
   GoogleMapController? _mapController;
   BookingRequest? _acceptedRequest;
   bool _hasAcceptedBooking = false;

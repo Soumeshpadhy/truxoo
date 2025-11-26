@@ -93,7 +93,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final ChatRepository _repository = ChatRepository();
   final List<ChatMessage> _messages = [];
   
-  bool _isClientOnline = true;
+  final bool _isClientOnline = true;
   bool _isLoadingMore = false;
   bool _hasMoreMessages = true;
   final int _messagesPerPage = 20;

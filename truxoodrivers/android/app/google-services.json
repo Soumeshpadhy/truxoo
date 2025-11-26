@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "326678539539",
+    "project_id": "truxoo-25f15",
+    "storage_bucket": "truxoo-25f15.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:326678539539:android:adf13dbb730193deb1bee6",
+        "android_client_info": {
+          "package_name": "com.truxoo.truxoo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCw41kB4NmmtF0w1etFNf1a6zlq9d1Ijrc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

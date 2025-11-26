@@ -144,7 +144,7 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
     };
   }
 
-  // ==== ADD THIS FUNCTION: Send phone number to backend ====
+  // ==== Send phone number to backend (unchanged) ====
   Future<bool> sendPhoneNumberToBackend(String phoneNumber) async {
     // UPDATE this URL for your setup:
     // Android emulator: http://10.0.2.2:3000/api/send-otp
@@ -167,7 +167,7 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
     }
   }
 
-  // ==== UPDATE THIS: Call sendPhoneNumberToBackend in _handleNext ====
+  // ==== UPDATED: Ensure driverData is passed to OtpPage for login flow ====
   void _handleNext() async {
     final contact = _contactNumberController.text.replaceAll(RegExp(r'[^\d]'), '');
 
@@ -200,7 +200,8 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
         context,
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) =>
-              OtpPage(phoneNumber: contact),
+              // ✅ FIX IS HERE: Pass the required 'driverData' with an empty map for login
+              OtpPage(phoneNumber: contact, driverData: const {}), 
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(
               opacity: animation,

@@ -4,7 +4,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'dart:async';
-import 'my_accounts_driver.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'history_driver.dart';
 import 'dart:math';
@@ -67,7 +66,7 @@ class _MapsState extends State<Maps> with WidgetsBindingObserver {
   Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
   List<LatLng> _polylineCoordinates = [];
-  PolylinePoints _polylinePoints = PolylinePoints();
+  final PolylinePoints _polylinePoints = PolylinePoints();
   
   bool _isLoadingLocation = true;
   bool _isAtPickup = false;
@@ -920,11 +919,11 @@ void didChangeDependencies() {
         );
       }
 
-    } on TimeoutException catch (e) {
+    } on TimeoutException {
       _showLocationError('Location request timed out. Please try again.');
-    } on LocationServiceDisabledException catch (e) {
+    } on LocationServiceDisabledException {
       _showLocationServiceDialog();
-    } on PermissionDeniedException catch (e) {
+    } on PermissionDeniedException {
       _showPermissionDeniedDialog();
     } catch (e) {
       _showLocationError('Unable to get your location: ${e.toString()}');
@@ -991,11 +990,11 @@ void didChangeDependencies() {
         _showErrorSnackbar('Unable to calculate route. Please try again.');
       }
       
-    } on TimeoutException catch (e) {
+    } on TimeoutException {
       if (mounted && !_isDisposed) {
         _showErrorSnackbar('Route calculation timed out. Check your internet connection.');
       }
-    } on FormatException catch (e) {
+    } on FormatException {
       if (mounted && !_isDisposed) {
         _showErrorSnackbar('Invalid route data received. Please try again.');
       }

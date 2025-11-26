@@ -17,7 +17,7 @@ class MyAccountDriver extends StatefulWidget {
   final String licenseExpiry;
 
   const MyAccountDriver({
-    Key? key,
+    super.key,
     this.currentProfileImagePath,
     required this.isLocalImage,
     required this.driverName,
@@ -29,7 +29,7 @@ class MyAccountDriver extends StatefulWidget {
     required this.truckCapacity,
     required this.licenseNumber,
     required this.licenseExpiry,
-  }) : super(key: key);
+  });
 
   @override
   State<MyAccountDriver> createState() => _MyAccountDriverState();
